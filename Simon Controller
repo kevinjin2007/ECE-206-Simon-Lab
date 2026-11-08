@@ -1,0 +1,153 @@
+//==============================================================================
+// Control Module for Simon Project
+//==============================================================================
+
+module SimonControl(
+	// External Inputs
+	input        clk,           // Clock
+	input        rst,           // Reset
+
+	// Datapath Inputs
+	// input     localin1,
+input legal,
+input match,
+input end_of_loop,
+	// Datapath Control Outputs
+	// output    control1,
+output reg add_regIndex,
+output reg reg_index_clr,
+output reg add_pattern,
+output reg load_pattern,
+
+	// External Outputs
+	// output [2:0] mode_leds
+	output reg[2:0] mode_leds
+);
+
+	// Declare Local Vars Here
+	// reg [X:0] state;
+	// reg [X:0] next_state;
+reg[1:0] state;
+reg[1:0] next_state;
+
+	// LED Light Parameters
+	localparam LED_MODE_INPUT    = 3'b001;
+	localparam LED_MODE_PLAYBACK = 3'b010;
+	localparam LED_MODE_REPEAT   = 3'b100;
+	localparam LED_MODE_DONE     = 3'b111;
+
+	// Declare State Names Here
+	//localparam STATE_ONE = 2'd0;
+localparam STATE_input = 2'd0;
+localparam STATE_playback = 2'd1;
+localparam STATE_repeat = 2'd2;
+localparam STATE_done = 2'd3;
+	// Output Combinational Logic
+	always @( * ) begin
+		// Set defaults
+		// signal_one = 0; ...
+add_regIndex = 1'b0;
+reg_index_clr = 1'b0;
+add_pattern = 1'b0;
+load_pattern = 1'b0;
+mode_leds = LED_MODE_INPUT;
+		// Write your output logic here
+		case(state)
+		
+		STATE_input: begin
+		mode_leds = LED_MODE_INPUT;
+		
+		if(legal) begin
+		add_pattern = 1'b1;
+		load_pattern = 1'b1;
+		reg_index_clr = 1'b1;
+		end
+	end
+	
+	STATE_playback: begin
+	mode_leds = LED_MODE_PLAYBACK;
+	
+	if(end_of_loop)
+	reg_index_clr = 1'b1;
+	else
+	add_regIndex = 1'b1;
+	end
+	
+	STATE_repeat: begin
+	mode_leds = LED_MODE_REPEAT;
+	
+	if(!match || end_of_loop)
+	reg_index_clr = 1'b1;
+	else
+	add_regIndex = 1'b1;
+	end
+
+    STATE_done: begin
+    mode_leds = LED_MODE_DONE;
+    
+    if(end_of_loop)
+    reg_index_clr = 1'b1;
+    else
+    add_regIndex = 1'b1;
+    end
+    
+    default: begin
+    mode_leds = LED_MODE_INPUT;
+    end
+    
+    endcase
+    end
+    
+
+	// Next State Combinational Logic
+	always @( * ) begin
+		// Write your Next State Logic Here
+		// next_state = ???
+		next_state = state;
+		
+		case(state)
+		
+		STATE_input: begin
+		if(legal)
+		next_state = STATE_playback;
+		end
+		
+		STATE_playback: begin
+		if(end_of_loop)
+		next_state = STATE_repeat;
+		end
+		
+		STATE_repeat: begin
+		if(!match)
+		next_state = STATE_done;
+		else if (end_of_loop)
+		next_state = STATE_input;
+		end
+		
+		STATE_done:begin
+		next_state = STATE_done;
+		end
+		
+		default: begin
+		next_state = STATE_input;
+		end
+		
+		endcase
+	end
+
+	// State Update Sequential Logic
+	always @(posedge clk) begin
+		if (rst) begin
+		
+		state<=STATE_input;
+			// Update state to reset state
+			// state <= STATE_ONE;
+			end
+		else begin
+		state<=next_state;
+			// Update state to next state
+			// state <= next_state;
+		end
+	end
+
+endmodule
