@@ -1,0 +1,224 @@
+
+`timescale 1ns/100ps
+
+`define ASSERT_EQ(ONE, TWO, MSG)               \
+    begin                                      \
+        if ((ONE) !== (TWO)) begin             \
+            $display("\t[FAILURE]:%s", (MSG)); \
+        end                                    \
+    end #0
+
+`define SET(VAR, VALUE) \
+    $display("Setting %s to %s...", `"VAR`", `"VALUE`"); \
+    #1; VAR = (VALUE); #1
+
+`define CLOCK \
+    $display("Pressing uclk..."); \
+    #1; clk = 1; #1; clk = 0; #1
+
+module SimonControlTest;
+
+    // Local Variables
+    reg clk = 0;
+    reg rst = 0;
+
+    // Datapath inputs
+    reg legal = 0;
+    reg match = 0;
+    reg end_of_loop = 0;
+
+    // Controller outputs
+    wire add_regIndex;
+    wire reg_index_clr;
+    wire add_pattern;
+    wire load_pattern;
+    wire [2:0] mode_leds;
+
+    // LED Parameters
+    localparam LED_MODE_INPUT    = 3'b001;
+    localparam LED_MODE_PLAYBACK = 3'b010;
+    localparam LED_MODE_REPEAT   = 3'b100;
+    localparam LED_MODE_DONE     = 3'b111;
+
+    // Instantiate controller
+    SimonControl ctrl(
+        .clk(clk),
+        .rst(rst),
+
+        .legal(legal),
+        .match(match),
+        .end_of_loop(end_of_loop),
+
+        .add_regIndex(add_regIndex),
+        .reg_index_clr(reg_index_clr),
+        .add_pattern(add_pattern),
+        .load_pattern(load_pattern),
+
+        .mode_leds(mode_leds)
+    );
+
+    initial begin
+
+        // =====================================
+        // TEST 1: Synchronous Reset
+        // =====================================
+        $display("TEST 1: Reset");
+
+        `SET(rst, 1);
+        `CLOCK;
+        `SET(rst, 0);
+
+        `ASSERT_EQ(mode_leds, LED_MODE_INPUT,
+                   "Reset enter INPUT");
+
+        // =====================================
+        // TEST 2: Legal and Illegal Input
+        // =====================================
+        $display("TEST 2: Legal and Illegal Input");
+
+        // Illegal input
+        `SET(legal, 0);
+
+        `ASSERT_EQ(add_pattern, 0,
+                   "Illegal input not increment patterns");
+
+        `ASSERT_EQ(load_pattern, 0,
+                   "Illegal input not write memory");
+
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_INPUT,
+                   "Illegal input remain in INPUT");
+
+        // Legal input
+        `SET(legal, 1);
+
+        `ASSERT_EQ(add_pattern, 1,
+                   "Legal input increment patterns");
+
+        `ASSERT_EQ(load_pattern, 1,
+                   "Legal input enable memory write");
+
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_PLAYBACK,
+                   "Legal input enter PLAYBACK");
+
+        // =====================================
+        // TEST 3: Playback
+        // =====================================
+        $display("TEST 3: Playback");
+
+        `SET(end_of_loop, 0);
+
+        `ASSERT_EQ(add_regIndex, 1,
+                   "Playback increment index");
+
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_PLAYBACK,
+                   "Playback continue");
+
+        `SET(end_of_loop, 1);
+
+        `ASSERT_EQ(reg_index_clr, 1,
+                   "End of playback clear index");
+
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_REPEAT,
+                   "Playback enter REPEAT");
+
+        // =====================================
+        // TEST 4: Correct Repeat
+        // =====================================
+        $display("TEST 4: Correct Repeat");
+
+        `SET(match, 1);
+        `SET(end_of_loop, 0);
+
+        `ASSERT_EQ(add_regIndex, 1,
+                   "Correct guess increment index");
+
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_REPEAT,
+                   "Correct guess remain in REPEAT");
+
+        // Correct final guess
+        `SET(end_of_loop, 1);
+
+        `ASSERT_EQ(reg_index_clr, 1,
+                   "Final guess clear index");
+
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_INPUT,
+                   "Correct sequence return to INPUT");
+
+        // =====================================
+        // TEST 5: Incorrect Repeat and DONE
+        // =====================================
+        $display("TEST 5: Incorrect Repeat/DONE");
+
+        // Enter PLAYBACK again
+        `SET(legal, 1);
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_PLAYBACK,
+                   "enter PLAYBACK");
+
+        // Finish playback
+        `SET(end_of_loop, 1);
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_REPEAT,
+                   "enter REPEAT");
+
+        // Wrong guess
+        `SET(match, 0);
+
+        `ASSERT_EQ(reg_index_clr, 1,
+                   "Wrong guess clear index");
+
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_DONE,
+                   "Wrong guess enter DONE");
+
+        // DONE should increment index
+        `SET(end_of_loop, 0);
+
+        `ASSERT_EQ(add_regIndex, 1,
+                   "DONE increment index");
+
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_DONE,
+                   "DONE remain in DONE");
+
+        // DONE should wrap to first pattern
+        `SET(end_of_loop, 1);
+
+        `ASSERT_EQ(reg_index_clr, 1,
+                   "DONE clear index at end");
+
+        `CLOCK;
+
+        `ASSERT_EQ(mode_leds, LED_MODE_DONE,
+                   "DONE remain in DONE");
+
+        // Only reset can exit DONE
+        `SET(rst, 1);
+        `CLOCK;
+        `SET(rst, 0);
+
+        `ASSERT_EQ(mode_leds, LED_MODE_INPUT,
+                   "Reset exit DONE");
+
+        $display("Controller tests completed.");
+        $finish;
+
+    end
+
+endmodule
